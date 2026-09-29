@@ -1,0 +1,7 @@
+// Rule 5 - Anonymous SMB sessions from external IPs (T1135, T1087)
+SecurityEvent
+| where EventID == 4624 and LogonType == 3
+| where TargetAccount has "ANONYMOUS LOGON"
+| where IpAddress !in ("-", "127.0.0.1", "::1")
+| summarize Sessions = count() by IpAddress, Computer, bin(TimeGenerated, 1h)
+| where Sessions > 20

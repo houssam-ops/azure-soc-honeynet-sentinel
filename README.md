@@ -1,4 +1,3 @@
-# azure-soc-honeynet-sentinel
 # Azure SOC Honeynet with Microsoft Sentinel — Threat Hunting Edition
 
 **Author:** Houssam Zouheir
@@ -64,7 +63,7 @@ Beyond the classic before/after hardening comparison, it covers:
 
 ## Part 1 — Threat Intelligence enrichment (OSINT)
 
-Each unique source IP found in `AzureNetworkAnalytics_CL` was enriched with AbuseIPDB, VirusTotal, GreyNoise and ASN/geolocation lookups.
+Each unique source IP found in `AzureNetworkAnalytics_CL` was enriched with AbuseIPDB, VirusTotal, GreyNoise and ASN/geolocation lookups. Query: [`queries/01_top_attacker_ips.kql`](queries/01_top_attacker_ips.kql)
 
 ```kql
 AzureNetworkAnalytics_CL
@@ -88,18 +87,18 @@ AzureNetworkAnalytics_CL
 
 | | |
 |---|---|
-| ![VirusTotal 193.24.123.39](screenshots/04_virustotal_193.24.123.39.png) | ![AbuseIPDB 186.67.38.171](screenshots/05_abuseipdb_186.67.38.171.png) |
+| ![VirusTotal 193.24.123.39](screenshots/04_virustotal_193_24_123_39.png) | ![AbuseIPDB 186.67.38.171](screenshots/05_abuseipdb_186_67_38_171.png) |
 | VirusTotal: 193.24.123.39, 5/91 malicious (AS200593 Prospero OOO) | AbuseIPDB: 186.67.38.171, 29 reports / 2 sources (T-Pot honeypot reports) |
-| ![VirusTotal 186.67.38.171](screenshots/06_virustotal_186.67.38.171.png) | ![AbuseIPDB 14.172.156.19](screenshots/08_abuseipdb_14.172.156.19.png) |
+| ![VirusTotal 186.67.38.171](screenshots/06_virustotal_186_67_38_171.png) | ![AbuseIPDB 14.172.156.19](screenshots/08_abuseipdb_14_172_156_19.png) |
 | VirusTotal: 186.67.38.171, 0/91 but GreyNoise: Suspicious | AbuseIPDB: 14.172.156.19, 3 reports / 3 sources (SMB 445) |
-| ![VirusTotal 118.99.103.253](screenshots/09_virustotal_118.99.103.253.png) | ![AbuseIPDB 154.192.120.183](screenshots/10_abuseipdb_154.192.120.183.png) |
+| ![VirusTotal 118.99.103.253](screenshots/09_virustotal_118_99_103_253.png) | ![AbuseIPDB 154.192.120.183](screenshots/10_abuseipdb_154_192_120_183.png) |
 | VirusTotal: 118.99.103.253, 0/91 but GreyNoise: Suspicious | AbuseIPDB: 154.192.120.183, 7 reports / 5 sources |
 
 **Key insight:** VirusTotal alone is not enough for recent automated scanning. 186.67.38.171 and 118.99.103.253 generate massive documented brute-force activity yet score 0/91 on VirusTotal; only GreyNoise flags them. Community-driven sources (AbuseIPDB) and internet-noise platforms (GreyNoise) are far more relevant than antivirus engines for this kind of threat.
 
 ## Part 2 — Brute-force and password spraying analysis (Event ID 4625)
 
-Most targeted accounts:
+Most targeted accounts ([`queries/02_top_targeted_accounts.kql`](queries/02_top_targeted_accounts.kql)):
 
 ```kql
 SecurityEvent
@@ -110,7 +109,7 @@ SecurityEvent
 | take 20
 ```
 
-Password spraying (short window):
+Password spraying, short window ([`queries/03_spraying_hunt_10m.kql`](queries/03_spraying_hunt_10m.kql)):
 
 ```kql
 SecurityEvent
@@ -139,13 +138,15 @@ SecurityEvent
 
 ![Spraying query, last hour](screenshots/07_spraying_query_1h_results.png)
 
-![Spraying query, 218.147.202.136 and 94.26.68.54](screenshots/11_spraying_query_218.147.202.136.png)
+![Spraying query, 218.147.202.136 and 94.26.68.54](screenshots/11_spraying_query_218_147_202_136.png)
 
 ![Spraying query, scrolled results](screenshots/12_spraying_query_scrolled.png)
 
 <!-- TODO: run OSINT on 186.10.4.106, 186.72.55.152, 182.191.72.12, 94.26.68.54 -->
 
 ## Part 3 — Custom detection rules (Sentinel Analytics)
+
+All rules are in [`queries/`](queries/).
 
 **Rule 1 — Sequential port scan** (T1046)
 
@@ -210,7 +211,7 @@ Successful logons (Event ID 4624) were checked for all known attacker IPs.
 
 **Interpretation:** these are SMB null sessions, not credential compromise. The roughly one-per-second rhythm of 118.99.103.253 indicates automated SMB reconnaissance (share/account enumeration), consistent with the open port 445 before hardening. 218.147.202.136 and 193.24.123.39 did not establish any successful session.
 
-To confirm no real account was compromised from outside:
+To confirm no real account was compromised from outside ([`queries/04_confirm_no_compromise.kql`](queries/04_confirm_no_compromise.kql)):
 
 ```kql
 SecurityEvent
@@ -255,47 +256,18 @@ Activity peaks were not uniform over 24 hours, consistent with automated botnet 
 
 ## Part 7 — Incident report
 
-### Incident: slow password spraying and anonymous SMB enumeration
+Full report: [`report/incident_report.md`](report/incident_report.md)
 
-**Timeline (UTC)**
-
-| Date / time | Event |
-|---|---|
-| 27/09 06:27 | First anonymous SMB session (LogonType 3) from 186.67.38.171 |
-| 28/09 00:56 | Anonymous sessions begin from 118.99.103.253 (206 events, about 1/second) |
-| 28/09 13:39 | First 4625 failure from 218.147.202.136 in the filtered query (password spraying) |
-| 28/09 18:50 – 19:40 | Spraying bursts from 186.10.4.106, 186.72.55.152 and 182.191.72.12 (5 – 10 accounts per 10 min) |
-| 28/09 20:00 – 20:50 | 94.26.68.54 (5 accounts, about 30 attempts/10 min) and 218.147.202.136 (14 accounts, 1 attempt per account/10 min) |
-| 29/09 13:33 | Last 4625 failure from 218.147.202.136 in the filtered query (168 attempts on 7 names) |
-
-**Indicators of compromise**
-
-- Spraying: 218.147.202.136, 186.10.4.106, 186.72.55.152, 182.191.72.12, 94.26.68.54; accounts include `ADMIN1`–`ADMIN5`, `TESTUSER`, `AZUREADMIN`
-- Anonymous SMB enumeration: 118.99.103.253, 14.172.156.19, 186.67.38.171, 81.10.4.117, 154.192.120.183
-- RDP brute-force: 193.24.123.39 (AbuseIPDB: 200 reports / 46 sources)
-
-**Impact**
-
-No real account was compromised. Five IPs established anonymous SMB sessions on `windows-vm`, revealing that port 445 was exposed before hardening (possible enumeration of shares and accounts).
-
-**Detection**
-
-Sentinel Rules 1–5. The 10-minute spraying hunting query (5+ distinct accounts) detected all five spraying IPs. Rule 4 adds a 24-hour lookback to also catch slower sprays.
-
-**Remediation**
-
-- NSG restricted to allow-listed IPs (ports 445 and 3389 closed to the internet)
-- Just-In-Time VM Access
-- MFA on administrative access
+**Summary:** slow password spraying (5 IPs, up to 14 accounts each) and anonymous SMB enumeration (5 IPs). No real account was compromised. Port 445 was exposed before hardening. Remediation: allow-listed NSG, JIT VM Access, MFA.
 
 ## Repository structure
 
 ```
 azure-soc-honeynet-sentinel/
 ├── README.md
-├── queries/        (.kql files: spraying, Rules 1-5)
-├── screenshots/
-└── report/
+├── queries/        (.kql files: hunting queries, Rules 1-5)
+├── screenshots/    (workbook maps, OSINT evidence, spraying results)
+└── report/         (incident report)
 ```
 
 ## Key takeaways

@@ -1,0 +1,7 @@
+// Part 1 - Unique attacker IPs (OSINT enrichment input)
+AzureNetworkAnalytics_CL
+| where FlowType_s == "MaliciousFlow" and AllowedInFlows_d > 0
+| where TimeGenerated >= ago(24h)
+| summarize AttackCount = count(), TotalFlows = sum(AllowedInFlows_d) by SrcIP_s
+| order by TotalFlows desc
+| take 20

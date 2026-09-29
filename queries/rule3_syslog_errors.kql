@@ -1,0 +1,5 @@
+// Rule 3 - Abnormal Linux Syslog errors
+Syslog
+| where SeverityLevel == "err" or SeverityLevel == "crit"
+| summarize ErrorCount = count() by Computer, Facility, bin(TimeGenerated, 1h)
+| where ErrorCount > 20

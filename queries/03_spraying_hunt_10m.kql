@@ -1,0 +1,7 @@
+// Part 2 - Password spraying hunting query (1h window, 10-min bins)
+SecurityEvent
+| where EventID == 4625
+| where TimeGenerated >= ago(1h)
+| summarize DistinctAccounts = dcount(TargetAccount), Attempts = count() by IpAddress, bin(TimeGenerated, 10m)
+| where DistinctAccounts >= 5
+| order by Attempts desc

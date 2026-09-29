@@ -1,0 +1,5 @@
+// Rule 2 - Successful logon after multiple failures (T1110.001, T1078)
+SecurityEvent
+| where EventID in (4625, 4624)
+| summarize FailedCount = countif(EventID == 4625), SuccessCount = countif(EventID == 4624) by TargetAccount, IpAddress, bin(TimeGenerated, 1h)
+| where FailedCount > 10 and SuccessCount > 0

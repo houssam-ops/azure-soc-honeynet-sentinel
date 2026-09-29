@@ -1,0 +1,5 @@
+// Rule 4 - Password spraying, 24h lookback (T1110.003) - run hourly
+SecurityEvent
+| where EventID == 4625
+| summarize DistinctAccounts = dcount(TargetAccount), Attempts = count() by IpAddress
+| where DistinctAccounts >= 5

@@ -1,0 +1,5 @@
+// Rule 1 - Sequential port scan (T1046)
+AzureNetworkAnalytics_CL
+| where TimeGenerated >= ago(1h)
+| summarize DistinctPorts = dcount(DestPort_d) by SrcIP_s, bin(TimeGenerated, 5m)
+| where DistinctPorts > 10

@@ -1,0 +1,8 @@
+// Part 4 - Confirm no real account logged on from outside (expected: empty)
+SecurityEvent
+| where EventID == 4624 and TimeGenerated >= ago(7d)
+| where LogonType in (3, 10)
+| where TargetAccount !has "ANONYMOUS LOGON"
+| where IpAddress !in ("-", "127.0.0.1", "::1")
+| summarize Successes = count(), Accounts = make_set(TargetAccount) by IpAddress
+| order by Successes desc

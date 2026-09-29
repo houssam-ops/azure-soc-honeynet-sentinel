@@ -1,0 +1,7 @@
+// Part 2 - Most targeted accounts (Event ID 4625)
+SecurityEvent
+| where EventID == 4625
+| where TimeGenerated >= ago(24h)
+| summarize FailedAttempts = count() by TargetAccount, IpAddress
+| order by FailedAttempts desc
+| take 20
