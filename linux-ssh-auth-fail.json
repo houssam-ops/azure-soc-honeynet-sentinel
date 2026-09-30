@@ -1,1 +1,213 @@
-
+{
+  "version": "Notebook/1.0",
+  "items": [
+    {
+      "type": 1,
+      "content": {
+        "json": "# SOC Honeynet Azure - Tableau de bord Threat Hunting\nSources : `Syslog` (SSH), `SecurityEvent` 4625 (RDP), `AzureNetworkAnalytics_CL`. Géolocalisation via la watchlist `geoip`. Choisis la période ci-dessous."
+      },
+      "name": "titre"
+    },
+    {
+      "type": 9,
+      "content": {
+        "version": "KqlParameterItem/1.0",
+        "parameters": [
+          {
+            "id": "b2f1d6c4-1a2b-4c3d-8e9f-000000000001",
+            "version": "KqlParameterItem/1.0",
+            "name": "TimeRange",
+            "label": "Période",
+            "type": 4,
+            "isRequired": true,
+            "value": {
+              "durationMs": 86400000
+            },
+            "typeSettings": {
+              "selectableValues": [
+                {
+                  "durationMs": 3600000
+                },
+                {
+                  "durationMs": 14400000
+                },
+                {
+                  "durationMs": 86400000
+                },
+                {
+                  "durationMs": 172800000
+                },
+                {
+                  "durationMs": 604800000
+                },
+                {
+                  "durationMs": 2592000000
+                }
+              ],
+              "allowCustom": true
+            }
+          }
+        ],
+        "style": "pills",
+        "queryType": 0,
+        "resourceType": "microsoft.operationalinsights/workspaces"
+      },
+      "name": "parametres"
+    },
+    {
+      "type": 3,
+      "content": {
+        "version": "KqlItem/1.0",
+        "query": "let GeoIPDB_FULL = _GetWatchlist(\"geoip\");\nlet IpRegex = @\"\\b\\d{1,3}\\.\\d{1,3}\\.\\d{1,3}\\.\\d{1,3}\\b\";\nSyslog\n| where Facility == \"auth\" and ProcessName == \"sshd\"\n| where SyslogMessage has \"Failed password\"\n| extend SourceIP = extract(IpRegex, 0, SyslogMessage), TargetUser = extract(@\"for (?:invalid user )?(\\S+) from\", 1, SyslogMessage)\n| where isnotempty(SourceIP)\n| evaluate ipv4_lookup(GeoIPDB_FULL, SourceIP, network)\n| extend latitude = todouble(latitude), longitude = todouble(longitude), country = countryname, city = cityname\n| summarize FailedAttempts = count(), TargetedUsers = dcount(TargetUser), LastSeen = max(TimeGenerated) by SourceIP, DestinationHostName = HostName, latitude, longitude, country, city\n| extend friendly_location = strcat(city, \" (\", country, \")\")\n| order by FailedAttempts desc",
+        "size": 3,
+        "title": "Attack Map - Échecs SSH (Linux)",
+        "queryType": 0,
+        "resourceType": "microsoft.operationalinsights/workspaces",
+        "visualization": "map",
+        "timeContextFromParameter": "TimeRange",
+        "mapSettings": {
+          "locInfo": "LatLong",
+          "locInfoColumn": "country",
+          "latitude": "latitude",
+          "longitude": "longitude",
+          "sizeSettings": "FailedAttempts",
+          "sizeAggregation": "Sum",
+          "opacity": 0.8,
+          "labelSettings": "friendly_location",
+          "legendMetric": "FailedAttempts",
+          "legendAggregation": "Sum",
+          "itemColorSettings": {
+            "nodeColorField": "FailedAttempts",
+            "colorAggregation": "Sum",
+            "type": "heatmap",
+            "heatmapPalette": "greenRed"
+          }
+        }
+      },
+      "name": "map-ssh-linux"
+    },
+    {
+      "type": 3,
+      "content": {
+        "version": "KqlItem/1.0",
+        "query": "let GeoIPDB_FULL = _GetWatchlist(\"geoip\");\nSecurityEvent\n| where EventID == 4625\n| where isnotempty(IpAddress) and IpAddress != \"-\"\n| extend SourceIP = IpAddress\n| evaluate ipv4_lookup(GeoIPDB_FULL, SourceIP, network)\n| extend latitude = todouble(latitude), longitude = todouble(longitude), country = countryname, city = cityname\n| summarize FailedAttempts = count(), TargetedAccounts = dcount(TargetAccount), LastSeen = max(TimeGenerated) by SourceIP, DestinationHostName = Computer, latitude, longitude, country, city\n| extend friendly_location = strcat(city, \" (\", country, \")\")\n| order by FailedAttempts desc",
+        "size": 3,
+        "title": "Attack Map - Échecs RDP (Windows, Event 4625)",
+        "queryType": 0,
+        "resourceType": "microsoft.operationalinsights/workspaces",
+        "visualization": "map",
+        "timeContextFromParameter": "TimeRange",
+        "mapSettings": {
+          "locInfo": "LatLong",
+          "locInfoColumn": "country",
+          "latitude": "latitude",
+          "longitude": "longitude",
+          "sizeSettings": "FailedAttempts",
+          "sizeAggregation": "Sum",
+          "opacity": 0.8,
+          "labelSettings": "friendly_location",
+          "legendMetric": "FailedAttempts",
+          "legendAggregation": "Sum",
+          "itemColorSettings": {
+            "nodeColorField": "FailedAttempts",
+            "colorAggregation": "Sum",
+            "type": "heatmap",
+            "heatmapPalette": "greenRed"
+          }
+        }
+      },
+      "name": "map-rdp-windows"
+    },
+    {
+      "type": 3,
+      "content": {
+        "version": "KqlItem/1.0",
+        "query": "let IpRegex = @\"\\b\\d{1,3}\\.\\d{1,3}\\.\\d{1,3}\\.\\d{1,3}\\b\";\nlet ssh = Syslog\n| where Facility == \"auth\" and ProcessName == \"sshd\"\n| where SyslogMessage has \"Failed password\"\n| extend SourceIP = extract(IpRegex, 0, SyslogMessage), TargetUser = extract(@\"for (?:invalid user )?(\\S+) from\", 1, SyslogMessage)\n| where isnotempty(SourceIP)\n| project TimeGenerated, SourceIP, TargetUser, Host = HostName, Source = \"SSH (Linux)\";\nlet rdp = SecurityEvent\n| where EventID == 4625\n| where isnotempty(IpAddress) and IpAddress != \"-\"\n| project TimeGenerated, SourceIP = IpAddress, TargetUser = TargetAccount, Host = Computer, Source = \"RDP (Windows)\";\nunion ssh, rdp\n| summarize Attempts = count() by bin(TimeGenerated, 1h), Source\n| order by TimeGenerated asc",
+        "size": 0,
+        "title": "Activité malveillante heure par heure (détection des pics)",
+        "queryType": 0,
+        "resourceType": "microsoft.operationalinsights/workspaces",
+        "visualization": "timechart",
+        "timeContextFromParameter": "TimeRange"
+      },
+      "name": "timeline"
+    },
+    {
+      "type": 3,
+      "content": {
+        "version": "KqlItem/1.0",
+        "query": "let IpRegex = @\"\\b\\d{1,3}\\.\\d{1,3}\\.\\d{1,3}\\.\\d{1,3}\\b\";\nlet ssh = Syslog\n| where Facility == \"auth\" and ProcessName == \"sshd\"\n| where SyslogMessage has \"Failed password\"\n| extend SourceIP = extract(IpRegex, 0, SyslogMessage), TargetUser = extract(@\"for (?:invalid user )?(\\S+) from\", 1, SyslogMessage)\n| where isnotempty(SourceIP)\n| project TimeGenerated, SourceIP, TargetUser, Host = HostName, Source = \"SSH (Linux)\";\nlet rdp = SecurityEvent\n| where EventID == 4625\n| where isnotempty(IpAddress) and IpAddress != \"-\"\n| project TimeGenerated, SourceIP = IpAddress, TargetUser = TargetAccount, Host = Computer, Source = \"RDP (Windows)\";\nunion ssh, rdp\n| extend Account = tolower(extract(@\"([^\\\\]+)$\", 1, TargetUser))\n| where isnotempty(Account)\n| summarize Attempts = count() by Account\n| top 10 by Attempts desc",
+        "size": 0,
+        "title": "Top 10 comptes ciblés (brute-force SSH + RDP)",
+        "queryType": 0,
+        "resourceType": "microsoft.operationalinsights/workspaces",
+        "visualization": "barchart",
+        "timeContextFromParameter": "TimeRange"
+      },
+      "name": "top-accounts"
+    },
+    {
+      "type": 3,
+      "content": {
+        "version": "KqlItem/1.0",
+        "query": "let GeoIPDB_FULL = _GetWatchlist(\"geoip\");\nlet IpRegex = @\"\\b\\d{1,3}\\.\\d{1,3}\\.\\d{1,3}\\.\\d{1,3}\\b\";\nlet ssh = Syslog\n| where Facility == \"auth\" and ProcessName == \"sshd\"\n| where SyslogMessage has \"Failed password\"\n| extend SourceIP = extract(IpRegex, 0, SyslogMessage), TargetUser = extract(@\"for (?:invalid user )?(\\S+) from\", 1, SyslogMessage)\n| where isnotempty(SourceIP)\n| project TimeGenerated, SourceIP, TargetUser, Host = HostName, Source = \"SSH (Linux)\";\nlet rdp = SecurityEvent\n| where EventID == 4625\n| where isnotempty(IpAddress) and IpAddress != \"-\"\n| project TimeGenerated, SourceIP = IpAddress, TargetUser = TargetAccount, Host = Computer, Source = \"RDP (Windows)\";\nunion ssh, rdp\n| evaluate ipv4_lookup(GeoIPDB_FULL, SourceIP, network)\n| summarize Attempts = count() by Country = countryname\n| top 10 by Attempts desc",
+        "size": 0,
+        "title": "Top 10 pays d'origine",
+        "queryType": 0,
+        "resourceType": "microsoft.operationalinsights/workspaces",
+        "visualization": "barchart",
+        "timeContextFromParameter": "TimeRange"
+      },
+      "name": "top-countries"
+    },
+    {
+      "type": 3,
+      "content": {
+        "version": "KqlItem/1.0",
+        "query": "let GeoIPDB_FULL = _GetWatchlist(\"geoip\");\nlet IpRegex = @\"\\b\\d{1,3}\\.\\d{1,3}\\.\\d{1,3}\\.\\d{1,3}\\b\";\nlet ssh = Syslog\n| where Facility == \"auth\" and ProcessName == \"sshd\"\n| where SyslogMessage has \"Failed password\"\n| extend SourceIP = extract(IpRegex, 0, SyslogMessage), TargetUser = extract(@\"for (?:invalid user )?(\\S+) from\", 1, SyslogMessage)\n| where isnotempty(SourceIP)\n| project TimeGenerated, SourceIP, TargetUser, Host = HostName, Source = \"SSH (Linux)\";\nlet rdp = SecurityEvent\n| where EventID == 4625\n| where isnotempty(IpAddress) and IpAddress != \"-\"\n| project TimeGenerated, SourceIP = IpAddress, TargetUser = TargetAccount, Host = Computer, Source = \"RDP (Windows)\";\nunion ssh, rdp\n| evaluate ipv4_lookup(GeoIPDB_FULL, SourceIP, network)\n| summarize Attempts = count(), DistinctAccounts = dcount(TargetUser), Machines = dcount(Host), FirstSeen = min(TimeGenerated), LastSeen = max(TimeGenerated) by SourceIP, Country = countryname, City = cityname\n| top 20 by Attempts desc",
+        "size": 3,
+        "title": "Top 20 IPs attaquantes (à enrichir avec AbuseIPDB / VirusTotal)",
+        "queryType": 0,
+        "resourceType": "microsoft.operationalinsights/workspaces",
+        "visualization": "table",
+        "timeContextFromParameter": "TimeRange"
+      },
+      "name": "top-ips"
+    },
+    {
+      "type": 3,
+      "content": {
+        "version": "KqlItem/1.0",
+        "query": "SecurityEvent\n| where EventID == 4625\n| where isnotempty(IpAddress) and IpAddress != \"-\"\n| summarize DistinctAccounts = dcount(TargetAccount), Attempts = count() by IpAddress, bin(TimeGenerated, 10m)\n| where DistinctAccounts >= 5\n| order by Attempts desc",
+        "size": 3,
+        "title": "Détection Password Spraying (>= 5 comptes / IP / 10 min)",
+        "queryType": 0,
+        "resourceType": "microsoft.operationalinsights/workspaces",
+        "visualization": "table",
+        "timeContextFromParameter": "TimeRange"
+      },
+      "name": "spraying"
+    },
+    {
+      "type": 3,
+      "content": {
+        "version": "KqlItem/1.0",
+        "query": "let b1 = datetime(2024-04-13 13:53:48);\nlet b2 = datetime(2024-04-14 13:53:48);\nlet a1 = datetime(2024-04-15 11:50:28);\nlet a2 = datetime(2024-04-16 11:50:28);\nunion\n( SecurityEvent | where TimeGenerated between (b1 .. a2)\n  | summarize Avant = countif(TimeGenerated between (b1 .. b2)), Apres = countif(TimeGenerated between (a1 .. a2))\n  | extend Metric = \"SecurityEvent\" ),\n( Syslog | where TimeGenerated between (b1 .. a2)\n  | summarize Avant = countif(TimeGenerated between (b1 .. b2)), Apres = countif(TimeGenerated between (a1 .. a2))\n  | extend Metric = \"Syslog\" ),\n( SecurityAlert | where DisplayName !startswith \"CUSTOM\" and DisplayName !startswith \"TEST\"\n  | where TimeGenerated between (b1 .. a2)\n  | summarize Avant = countif(TimeGenerated between (b1 .. b2)), Apres = countif(TimeGenerated between (a1 .. a2))\n  | extend Metric = \"SecurityAlert\" ),\n( SecurityIncident | where TimeGenerated between (b1 .. a2)\n  | summarize arg_max(TimeGenerated, *) by IncidentNumber\n  | summarize Avant = countif(TimeGenerated between (b1 .. b2)), Apres = countif(TimeGenerated between (a1 .. a2))\n  | extend Metric = \"SecurityIncident (dédupliqué)\" ),\n( AzureNetworkAnalytics_CL | where FlowType_s == \"MaliciousFlow\" and AllowedInFlows_d > 0\n  | where TimeGenerated between (b1 .. a2)\n  | summarize Avant = countif(TimeGenerated between (b1 .. b2)), Apres = countif(TimeGenerated between (a1 .. a2))\n  | extend Metric = \"Flux malveillants autorisés\" )\n| project Metric, Avant, Apres, Reduction = iff(Avant == 0, \"n/a\", strcat(round(100.0 * (Apres - Avant) / Avant, 0), \"%\"))",
+        "size": 3,
+        "title": "Comparaison Avant / Après durcissement",
+        "queryType": 0,
+        "resourceType": "microsoft.operationalinsights/workspaces",
+        "visualization": "table",
+        "timeContext": {
+          "durationMs": 0,
+          "startTime": "2024-04-13T00:00:00.000Z",
+          "endTime": "2024-04-17T00:00:00.000Z"
+        }
+      },
+      "name": "avant-apres"
+    }
+  ],
+  "isLocked": false,
+  "fallbackResourceIds": [],
+  "$schema": "https://github.com/Microsoft/Application-Insights-Workbooks/blob/master/schema/workbook.json"
+}
