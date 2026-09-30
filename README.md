@@ -41,15 +41,15 @@ Components:
 
 ### Before hardening
 
-![Before hardening: wide open NSGs](screenshots/before_hardening_open_nsg.png)
+![Before hardening: every resource directly reachable from the public internet](screenshots/before_hardening_open_nsg.png)
 
-Permissive NSGs (RDP/SSH/SMB open to the internet), no MFA, no geo-restriction. The VMs, Storage Account and Key Vault are all directly exposed to the public internet.
+Every resource is directly reachable from the public internet. The three VMs sit behind NSG rules `ANY → ANY` (RDP 3389 and SMB 445 on the Windows VMs, SSH 22 on the Linux VM), and the Storage Account and Key Vault have public access enabled. No MFA, no geo-restriction, no Just-In-Time access. Result: **620 malicious flows allowed in 24 h**.
 
 ### After hardening
 
-![After hardening: private endpoints and firewall inside a VNet](screenshots/after_hardening_pe_fw.png)
+![After hardening: VNet, allow-list NSG and Private Endpoints](screenshots/after_hardening_pe_fw.png)
 
-Restrictive NSGs (allow-listed IPs only), MFA enabled, Just-In-Time VM Access. The VMs sit inside a VNet subnet behind NSGs, and the Storage Account and Key Vault are protected with Private Endpoints / firewall rules (PE / FW).
+Resources sit inside a VNet subnet behind an allow-list NSG. Scanner traffic from the internet is blocked at the NSG, and only the admin (allow-listed IP, MFA, JIT) gets through. The Storage Account and Key Vault are protected with Private Endpoints / firewall rules (PE / FW). Result: **0 malicious flows allowed in 24 h**.
 
 ## Data sources
 
