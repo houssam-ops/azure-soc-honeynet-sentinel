@@ -5,6 +5,8 @@
 
 > Azure SOC honeynet with Microsoft Sentinel: real attacker OSINT enrichment, custom KQL detection rules, MITRE ATT&CK mapping and incident report.
 
+**Skills demonstrated:** cloud security (Azure NSG, JIT, MFA, Private Endpoints), SIEM engineering (Sentinel analytics rules, workbooks), KQL threat hunting, OSINT enrichment (AbuseIPDB, VirusTotal, GreyNoise), MITRE ATT&CK mapping, incident reporting.
+
 ---
 
 ## Overview
@@ -19,7 +21,9 @@ Beyond the classic before/after hardening comparison, it covers:
 - MITRE ATT&CK mapping
 - An incident report based on attacks actually observed
 
-**Result:** malicious flows dropped from 620 to 0 after hardening (restrictive NSG, MFA, Just-In-Time VM Access).
+**Result:** malicious flows *allowed* into the honeynet dropped from 620 to 0 after hardening (restrictive NSG, MFA, Just-In-Time VM Access). See [Limitations](#limitations) for how to read this number.
+
+> **Ethical note:** this lab runs in an isolated Azure subscription with no real data and no production workloads. Every attacker IP shown is real internet scanner noise received by the honeynet; no attack was launched by me.
 
 ## Architecture
 
@@ -59,6 +63,8 @@ Restrictive NSGs (allow-listed IPs only), MFA enabled, Just-In-Time VM Access. T
 
 ## Before / After hardening
 
+> **Two observation windows.** The before/after metrics below come from the April 2024 run. The hunting results in Parts 2 and 4 (password spraying, anonymous SMB sessions) come from a later observation window (28–29/09) on the same honeynet.
+
 <!-- TODO: verify these periods and values match your final run -->
 
 | Period | Start | End |
@@ -73,6 +79,8 @@ Restrictive NSGs (allow-listed IPs only), MFA enabled, Just-In-Time VM Access. T
 | SecurityAlert | 4 | 0 | -100% |
 | SecurityIncident | 59 | 0 | -100% |
 | AzureNetworkAnalytics_CL | 620 | 0 | -100% |
+
+`SecurityEvent` does not fall to zero because it also contains legitimate activity (system events and authorized administrative logons), which remains after hardening.
 
 ---
 
@@ -89,14 +97,18 @@ AzureNetworkAnalytics_CL
 | take 20
 ```
 
-| Source IP | Country | ASN / Provider | Reputation | Observed activity |
-|---|---|---|---|---|
-| 193.24.123.39 | Russia | AS200593 – Prospero OOO (bulletproof hosting) | 200 reports / 46 sources, VT 5/91 malicious | RDP brute-force, port scan |
-| 186.67.38.171 | Chile | AS27651 – ENTEL Chile S.A. | 29 reports / 2 sources, VT 0/91, GreyNoise: Suspicious | SSH brute-force (2300+ attempts/h on a T-Pot honeypot) |
-| 14.172.156.19 | Vietnam | — | 3 reports / 3 sources, VT 0/91 | SMB (445) port scan |
-| 118.99.103.253 | Indonesia | AS17451 – BIZNET Networks | 0 reports, VT 0/91, GreyNoise: Suspicious | RDP brute-force (varied dictionary) |
-| 154.192.120.183 | Pakistan | — | 7 reports / 5 sources | Bad web bot, brute-force (history) |
-| 218.147.202.136 | [TODO] | [TODO] | [TODO] | Slow password spraying |
+The table separates what OSINT reports about each IP from what was actually seen in the honeynet logs.
+
+| Source IP | Country | ASN / Provider | OSINT reputation | Reported by OSINT | Seen in my logs |
+|---|---|---|---|---|---|
+| 193.24.123.39 | Russia | AS200593 – Prospero OOO (bulletproof hosting) | 200 reports / 46 sources, VT 5/91 malicious | RDP brute-force, port scan | Malicious flows allowed; no successful logon |
+| 186.67.38.171 | Chile | AS27651 – ENTEL Chile S.A. | 29 reports / 2 sources, VT 0/91, GreyNoise: Suspicious | SSH brute-force (2300+ attempts/h on a T-Pot honeypot) | 10 anonymous SMB sessions |
+| 14.172.156.19 | Vietnam | — | 3 reports / 3 sources, VT 0/91 | SMB (445) port scan | 126 anonymous SMB sessions |
+| 118.99.103.253 | Indonesia | AS17451 – BIZNET Networks | 0 reports, VT 0/91, GreyNoise: Suspicious | None reported | 206 anonymous SMB sessions (~1/s), RDP brute-force (varied dictionary) |
+| 154.192.120.183 | Pakistan | — | 7 reports / 5 sources | Bad web bot, brute-force (history) | 6 anonymous SMB sessions |
+| 218.147.202.136 | [TODO] | [TODO] | [TODO] | [TODO] | Slow password spraying (14 accounts, no successful logon) |
+
+OSINT enrichment covers the six IPs above. The IPs that only appear in the spraying analysis (Part 2) and in Part 4 (`81.10.4.117`) are not enriched.
 
 **Evidence**
 
@@ -109,7 +121,9 @@ AzureNetworkAnalytics_CL
 | ![VirusTotal 118.99.103.253](screenshots/09_virustotal_118_99_103_253.png) | ![AbuseIPDB 154.192.120.183](screenshots/10_abuseipdb_154_192_120_183.png) |
 | VirusTotal: 118.99.103.253, 0/91 but GreyNoise: Suspicious | AbuseIPDB: 154.192.120.183, 7 reports / 5 sources |
 
-**Key insight:** VirusTotal alone is not enough for recent automated scanning. 186.67.38.171 and 118.99.103.253 generate massive documented brute-force activity yet score 0/91 on VirusTotal; only GreyNoise flags them. Community-driven sources (AbuseIPDB) and internet-noise platforms (GreyNoise) are far more relevant than antivirus engines for this kind of threat.
+**Key insight:** VirusTotal alone is not enough for recent automated scanning. 186.67.38.171 and 118.99.103.253 are flagged by GreyNoise yet score 0/91 on VirusTotal. Community-driven sources (AbuseIPDB) and internet-noise platforms (GreyNoise) are far more relevant than antivirus engines for this kind of threat.
+
+<!-- TODO: run OSINT on 186.10.4.106, 186.72.55.152, 182.191.72.12, 94.26.68.54, 81.10.4.117 and 218.147.202.136 -->
 
 ## Part 2 — Brute-force and password spraying analysis (Event ID 4625)
 
@@ -148,7 +162,7 @@ SecurityEvent
 | 94.26.68.54 | 5 | 23 – 31 (steady) | 20:00 – 20:50 |
 | 218.147.202.136 | 14 | 14 (one attempt per account per bin) | 20:00 – 20:40 |
 
-- **218.147.202.136** is the clearest low-and-slow case: 14 distinct accounts, exactly one attempt per account every 10 minutes, repeated in every bin. A first filtered query on 7 names (`ADMIN1`–`ADMIN5`, `TESTUSER`, `AZUREADMIN`) counted 168 attempts between 28/09 13:39 and 29/09 13:33 UTC, but that filter undercounts the real account list.
+- **218.147.202.136** is the clearest low-and-slow case: 14 distinct accounts, exactly one attempt per account every 10 minutes, repeated in every bin.
 - 94.26.68.54 shows a different profile: a constant 5 accounts and about 30 attempts per bin.
 
 ![Spraying query, last hour](screenshots/07_spraying_query_1h_results.png)
@@ -157,11 +171,9 @@ SecurityEvent
 
 ![Spraying query, scrolled results](screenshots/12_spraying_query_scrolled.png)
 
-<!-- TODO: run OSINT on 186.10.4.106, 186.72.55.152, 182.191.72.12, 94.26.68.54 -->
-
 ## Part 3 — Custom detection rules (Sentinel Analytics)
 
-All rules are in [`queries/`](queries/).
+All rules are in [`queries/`](queries/). Rules 2 and 4 have no `TimeGenerated` filter in the query: the lookback is defined by the rule's query period in the Sentinel schedule (Rule 4: 24-hour lookback, run hourly).
 
 **Rule 1 — Sequential port scan** (T1046)
 
@@ -192,7 +204,7 @@ Syslog
 
 <!-- TODO: state whether Syslog data was present on linux-vm -->
 
-**Rule 4 — Password spraying, 24-hour lookback** (T1110.003) — run hourly. Complements the 10-minute hunting query by also catching sprays spread over a longer period.
+**Rule 4 — Password spraying, 24-hour lookback** (T1110.003). Complements the 10-minute hunting query by also catching sprays spread over a longer period.
 
 ```kql
 SecurityEvent
@@ -211,6 +223,8 @@ SecurityEvent
 | summarize Sessions = count() by IpAddress, Computer, bin(TimeGenerated, 1h)
 | where Sessions > 20
 ```
+
+<!-- TODO: add a screenshot of a Sentinel incident generated by one of these rules, showing entity mapping (IP, account, host) and MITRE tactics -->
 
 ## Part 4 — Did anyone get in? Successful logon analysis
 
@@ -275,6 +289,26 @@ Full report: [`report/incident_report.md`](report/incident_report.md)
 
 **Summary:** slow password spraying (5 IPs, up to 14 accounts each) and anonymous SMB enumeration (5 IPs). No real account was compromised. Port 445 was exposed before hardening. Remediation: allow-listed NSG, JIT VM Access, MFA.
 
+## How to reproduce
+
+1. **Network and VMs:** create a resource group, a VNet, and an NSG with RDP/SSH/SMB open to the internet. Deploy 2 Windows VMs and 1 Linux VM in the subnet.
+2. **Log collection:** create a Log Analytics Workspace, enable Microsoft Sentinel on it, and install the Azure Monitor Agent on the VMs with data collection rules for `SecurityEvent` and `Syslog`.
+3. **Network telemetry:** feed NSG flow data into the workspace so that `AzureNetworkAnalytics_CL` is populated.
+4. **Detection:** create the analytics rules from [`queries/`](queries/) in Sentinel, with entity mapping (IP, account, host) and MITRE tactics; build the workbook.
+5. **Observe:** leave the honeynet exposed for 24 hours and collect the "before" metrics.
+6. **Harden:** restrict the NSG to allow-listed IPs, enforce MFA, enable JIT VM Access, and put the Storage Account and Key Vault behind Private Endpoints / firewall rules. Collect the "after" metrics over another 24 hours.
+7. **Clean up:** delete the resource group to stop all costs.
+
+Estimated cost: <!-- TODO: add the real cost of the lab -->
+
+## Limitations
+
+- **One day before, one day after.** The comparison covers a single 24-hour window on each side, so it shows a clear effect but is not a statistical study.
+- **620 → 0 counts allowed flows only.** The query filters on `AllowedInFlows_d > 0`, so a restrictive NSG naturally brings it to zero. It proves the NSG blocks unwanted traffic, not that scanners stopped coming. <!-- TODO: add blocked flows from NSG flow logs to show that scanning continued -->
+- **No firewall or endpoint telemetry** beyond the VMs' own logs and NSG flows, so correlation is limited.
+- **Rule 2 can produce false positives** (a legitimate user mistyping a password, then succeeding); thresholds would need tuning in production.
+- **OSINT reputation is a snapshot** and reflects how much each IP has been reported by others, not proof of intent.
+
 ## Repository structure
 
 ```
@@ -291,4 +325,4 @@ azure-soc-honeynet-sentinel/
 - VirusTotal alone is insufficient for recent scan/brute-force noise; combine AbuseIPDB and GreyNoise.
 - Password spraying shows up as many distinct accounts per IP in a short window; a `dcount(TargetAccount)` threshold catches even one-attempt-per-account rotation, and a longer lookback covers slower sprays.
 - Successful logon events must be read carefully: anonymous LogonType 3 sessions are enumeration, not credential compromise.
-- Hardening (NSG, MFA, JIT) eliminated the malicious flows entirely (620 → 0).
+- Hardening (NSG, MFA, JIT) eliminated the malicious flows allowed into the honeynet (620 → 0).
