@@ -23,14 +23,29 @@ Beyond the classic before/after hardening comparison, it covers:
 
 ## Architecture
 
+![Azure SOC Honeynet + Microsoft Sentinel architecture](architecture/architecture_overview.png)
+
+*Attack traffic (red) reaches the exposed VMs, logs flow into the Log Analytics Workspace (green), and Microsoft Sentinel queries them with KQL (yellow) to produce attack maps, incidents and alerts.*
+
+Components:
+
 - Virtual Network (VNet) and Network Security Group (NSG)
 - 2 Windows VMs + 1 Linux VM
 - Log Analytics Workspace
 - Azure Key Vault and Storage Account
 - Microsoft Sentinel
 
-**Before hardening:** permissive NSG (RDP/SSH open to the internet), no MFA, no geo-restriction.
-**After hardening:** restrictive NSG (allow-listed IPs only), MFA enabled, Just-In-Time VM Access.
+### Before hardening
+
+![Before hardening: wide open NSGs](architecture/before_hardening_open_nsg.png)
+
+Permissive NSGs (RDP/SSH/SMB open to the internet), no MFA, no geo-restriction. The VMs, Storage Account and Key Vault are all directly exposed to the public internet.
+
+### After hardening
+
+![After hardening: private endpoints and firewall inside a VNet](architecture/after_hardening_pe_fw.png)
+
+Restrictive NSGs (allow-listed IPs only), MFA enabled, Just-In-Time VM Access. The VMs sit inside a VNet subnet behind NSGs, and the Storage Account and Key Vault are protected with Private Endpoints / firewall rules (PE / FW).
 
 ## Data sources
 
@@ -265,6 +280,7 @@ Full report: [`report/incident_report.md`](report/incident_report.md)
 ```
 azure-soc-honeynet-sentinel/
 ├── README.md
+├── architecture/   (overview diagram, before/after hardening diagrams)
 ├── queries/        (.kql files: hunting queries, Rules 1-5)
 ├── screenshots/    (workbook maps, OSINT evidence, spraying results)
 └── report/         (incident report)
