@@ -37,13 +37,13 @@ Components:
 
 ### Before hardening
 
-![Before hardening: wide open NSGs](screenshots/Screenshot_From_2026-09-30_12-48-43.png)
+![Before hardening: wide open NSGs](screenshots/before_hardening_open_nsg.png)
 
 Permissive NSGs (RDP/SSH/SMB open to the internet), no MFA, no geo-restriction. The VMs, Storage Account and Key Vault are all directly exposed to the public internet.
 
 ### After hardening
 
-![After hardening: private endpoints and firewall inside a VNet](screenshots/Screenshot_From_2026-09-29_16-31-09.png)
+![After hardening: private endpoints and firewall inside a VNet](screenshots/after_hardening_pe_fw.png)
 
 Restrictive NSGs (allow-listed IPs only), MFA enabled, Just-In-Time VM Access. The VMs sit inside a VNet subnet behind NSGs, and the Storage Account and Key Vault are protected with Private Endpoints / firewall rules (PE / FW).
 
